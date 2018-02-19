@@ -1,0 +1,17 @@
+subject -- subject ID 
+rsi -- response-stimulus interval, how long points were visible before stimulus onset
+block -- position in the experiment (out of 12)
+block_c -- same as above except the distribution is centered at block 6 (total number of blocks = 12)
+blocktime -- amount of time it took to complete a given block
+trial -- each row represents one trial
+current -- factor var representing whether the value of the task performed on previous trial changed (1 = decrease by a point, 0 = remained constant)
+other -- same as ^ except represents value changes for task not performed on previous trial and (1 = increase by a point, 0 = remain constant)
+difference -- difference between values on present trial (other - current; pos values indicate difference in favor of other task)
+stim.rep -- did the stimulus repeat from the previous trial
+pvsum -- sum of points
+rt -- amount of time between stimulus onset and response on present trial
+transcode -- task selection at trial N relative to selection at trial N-1 (1 = switched to the opposite task, 0 = repeated same task)
+
+
+the scatter plot i made required computing several between-subject variables
+	i summarized all of that in the coding for the individual_difference var data
