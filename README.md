@@ -1,7 +1,7 @@
 # Assessing the role of reward in task selection using a reward-based voluntary task switching paradigm
 ## David Braun & Catherine M. Arrington
 
-The purpose of this repository is to provide a brief and accessible synopsis of the main analyses reported in this publication. The ./markdown directory contains R Markdown documents for all phases of the major analyses, as well as background about the theory and methods. The original code used for the full analyses is located in the ./scripts directory. The R Markdown files were written after the paper had been published. [Link to full text](other_resources/Braun & Arrington, 2018.pdf)
+The purpose of this repository is to provide a brief and accessible synopsis of the main analyses reported in this publication. The ./markdown directory contains R Markdown documents for all phases of the major analyses, as well as background about the theory and methods. The original code used for the full analyses is located in the ./scripts directory. The R Markdown files were written after the paper had been published. [Link to full text]("other_resources/Braun & Arrington, 2018.pdf")
 
 The important files in this repository:
 
@@ -12,7 +12,7 @@ The important files in this repository:
 2. [Theory and Method Background](markdown/Background.nb.html)
     *  A document briefly covering the theory, method and hypotheses for the present study.
 
-3. [Preprocessing Procedures](markdown/Preprocessing.nb.html)
+3. [Preprocessing Procedures]("markdown/Preprocessing.nb.html")
     *  This document covers the initial data manipulation and trimming procedures
 
 4. [Individual Differences Analysis](markdown/Individual Differences.nb.html)
