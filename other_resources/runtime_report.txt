@@ -1,0 +1,4 @@
+[1] "The block at high difference analysis took 24.3926800012588 minutes to run"
+[1] "The block at low difference analysis took 22.3812433322271 minutes to run"
+[1] "The block at high difference step-down analysis took 5.42333999872208 minutes to run"
+[1] "The block at high difference analysis took 5.42333999872208 minutes to run"

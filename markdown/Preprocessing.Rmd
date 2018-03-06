@@ -1,0 +1,167 @@
+---
+title: "Preprocessing of the Raw Data"
+output: html_notebook
+---
+This document goes over the basic data coding and trimming procedures used in Braun & Arrington (2018). 
+
+### Loading libraries, data, and keeping only the important variables.
+
+```{r}
+library(data.table)
+library(reshape2)
+library(ggplot2)
+library(plyr)
+library(dplyr)
+
+current_data <- fread('http://www.lehigh.edu/~dab414/data/easy_feed_raw.txt')
+
+keep <- t(matrix(c("Subject", "subject",
+					"colorL[SubTrial]", "colorl",
+					"colorR[SubTrial]", "colorr",
+					"Procedure[SubTrial]", "procedure",
+					"responselocation[SubTrial]","responselocation",
+					"blocks.Sample", "block",
+					"stim1[SubTrial]", "stim",
+					"SubTrial", "trial",
+					"RSI[SubTrial]","rsi",
+					"blocktime", "blocktime",
+					"taskcode[SubTrial]","taskcode",
+					"Taskattempt[SubTrial]","taskattempt",
+					"transition[SubTrial]","transition",
+					"stimulus.RT[SubTrial]","rt",
+					"pointvalueL[SubTrial]","pvl",
+					"pointvalueR[SubTrial]","pvr"
+					 ),nrow=2))
+					
+## data table doesn't seem to like when i try to index columns with a character vector... 
+current_data <- as.data.frame(current_data)
+current_data <- current_data[,keep[,1]]
+colnames(current_data) <- keep[,2]
+current_data <- as.data.table(current_data)
+head(current_data)
+initial_subjects <- current_data[, .N, by = subject][,.N]
+paste('The total number of subjects in the dataset before preprocessing:',initial_subjects)
+
+```
+
+### Variable Coding
+
+We'll trim the dataset to remove all practice trials, and then compute some variables that we'll use for trimming trials (e.g., errors) and variables that we'll need for the analyses. (The comments in the code below display better when pasted into a text editor)
+
+```{r}
+current_data <- current_data %>%
+  filter(procedure == 'trialproc') %>% ## discard all practice trials
+  mutate(error = ifelse(taskcode == 'error', 1, 0), ## if the P made an error on a trial then 1, else 0
+         error_trim = ifelse(taskcode == 'error' | shift(taskcode) == 'error', 1, 0), ## we also want to trim trials following error trials, as per convention in the task switching literature
+         transcode = as.numeric(ifelse(transition == 'Rep', 0, ifelse(transition == 'Switch', 1, ''))), ## code selection as a binary factor var
+         
+         ## current is a binary variable indicating whether the reward for the task that the P performed on the previous trial decreased (1) or remained constant
+         ## 'colorl' and 'colorr' are essentially markers of whether the reward on the left or right changed from the previous trial; green = increased by one, red = decreased by one, black = remained constant
+         ## response location tells us whether the P responded with the left or right hand, reward location is congruent with key mapping
+         current = ifelse(shift(responselocation) == 'left' & colorl == 'red', 1, ## if the P did the left task on the previous trial and that reward decreased on the present trial, then 1
+                          ifelse(shift(responselocation) == 'left' & colorl == 'black', 0, ## if the P did the left task on the previous trial and that reward remained constant, then 0
+                                 ifelse(shift(responselocation) == 'right' & colorr == 'red', 1, ## same idea but for the right side
+                                        ifelse(shift(responselocation) == 'right' & colorr == 'black', 0, '')))),
+         other = ifelse(shift(responselocation) == 'left' & colorr == 'green', 1, ## same thing but we're coding how the 'other' task reward transitioned
+                          ifelse(shift(responselocation) == 'left' & colorr == 'black', 0, 
+                                 ifelse(shift(responselocation) == 'right' & colorl == 'green', 1, 
+                                        ifelse(shift(responselocation) == 'right' & colorl == 'black', 0, '')))),
+         
+         ## code point values specific to what task was performed on previous trial
+         pvc = as.numeric(ifelse(shift(responselocation) == 'left', pvl, ifelse(shift(responselocation) == 'right', pvr, ''))),
+         pvo = as.numeric(ifelse(shift(responselocation) == 'left', pvr, ifelse(shift(responselocation) == 'right', pvl, ''))),
+         
+         ## center block
+         block_c = block - 6
+         ) # end mutate
+
+## code difference between task values as function of variables computed above
+current_data$difference <- as.integer(current_data$pvo) - as.integer(current_data$pvc)
+str(current_data)  
+
+
+```
+
+
+### Subject and trial trimming
+
+We're going to drop all subjects from the dataset whose error rates are higher than 15% (suggesting disengagement from the task).
+We're going to drop the first trial in each block, all error trials, and trials following error trials.
+*Note: we report analysis of error and response time data in the full paper, but won't be reporting those analyses here*
+
+```{r}
+## Trim first trial in each block
+current_data <- as.data.table(current_data)
+current_data <- current_data[transition != 'StartBlock']
+
+## Return subject-wise error rates
+current_data[, .(errors = mean(error)), by = subject][,hist(errors, main = 'Subject-Wise Error Rates')]
+error_subjects <- current_data[, .(errors = mean(error)), by = subject][errors > .15]
+paste('There are', nrow(error_subjects), 'subjects with error rates greater than the .15 threshold.')
+error_subjects
+```
+
+```{r}
+## keep only subjects within error threshold
+current_data <- current_data[, errors := mean(error), by = subject][errors < .15]
+
+original_trials <- nrow(current_data)
+
+## remove error trials
+current_data <- current_data %>%
+  filter(error_trim == 0)
+
+error_rows <- original_trials - nrow(current_data)
+
+hist(current_data$difference, main = 'Difference', xlab = 'Difference (Positive means more points for switching)')
+```
+
+It's clear from the histogram above that, for most trials, the difference was close to zero, meaning that subjects reponded in a way to keep the tasks rather similar in reward. Since we're interested in the moment where reward offsets the cost of switching, we're only interested in explaining the middle of this distribution. The extreme portions of this distribution likely either reflect disengagement from task or a specific strategy that we're not interested in explaining for present purposes (i.e., repeat until maximum reward is available, then switch). We're going to constrain the data to -3 through 3 on this difference variable to give us the best chance of explaining the process of weighing reward against effort. I'm saving out a dataset where we don't trim based on this criterion for analyses that don't depend on this difference variable. 
+
+```{r}
+current_data <- subset(current_data, select = -c(colorl, colorr, procedure, responselocation, stim, taskcode, taskattempt, transition, pvl, pvr, error, error_trim, pvc, pvo, errors))
+current_data$current <- as.factor(current_data$current)
+current_data$other <- as.factor(current_data$other)
+current_data$transcode <- as.numeric(current_data$transcode)
+current_data$subject <- as.factor(current_data$subject)
+write.csv(current_data, '../data/easy_clean_full.csv', row.names = FALSE)
+
+current_data <- current_data %>%
+  filter(difference >= -3 & difference <= 3)
+
+difference_rows <- (original_trials - error_rows) - nrow(current_data)
+
+paste('In sum, ', round(error_rows / original_trials, 2), '% of the data was dropped due to error trials, and ', round(difference_rows / (original_trials - error_rows), 2), '% of the data was lost due to trimming on the difference variable',sep = '')
+```
+
+Saving a cleaned dataset to a local directory.
+
+```{r}
+write.csv(current_data, '../data/easy_clean.csv', row.names = FALSE)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

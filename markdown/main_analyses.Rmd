@@ -1,0 +1,392 @@
+---
+title: "Task Selection Analysis"
+output: html_notebook
+---
+
+The purpose of this document is to recreate the main analyses presented under the "Task Selection" heading in [Braun & Arrington, (2018; p. 6)](../other_resources/Braun & Arrington, 2018.pdf). 
+
+For an abridged overview of the background / motivation behind the analyses, and details about the method, see [this](Background.nb.html) document.
+
+### Relevant Terms:
+*  *current task* -- the task that was performed on the previous trial.
+*  *other task* -- the task that was *not* performed on the previous trial.
+*  *point difference* -- the reward for the *other* task minus the reward for the *current* task.
+*  *block* -- trials in the experiment were grouped into blocks, and there were 12 total blocks in the experiment. This is essentially our "time" variable.
+* *transcode* -- whether or not the participant repeated (0) or switched (1) tasks, also referred to as *switch*
+
+### Analyses Overview:
+
+There are two analyses that will be presented:
+
+1. Assessing whether representation of reward is stronger for a task that was just performed 
+    *  If true, there should be a bias to switch more often when only reward for the current task decreases relative to when only the reward for the other task increases.
+    *  We will investigate this by running a 2 (current reward: decrease vs. constant) X 2 (other reward: increase vs. constant) within-subjects ANOVA on the proportion of task switches.
+  
+2. The weighing of effort against reward.
+    (a) Assessing whether task choices are generally in line with what would be expected if participants weigh the effort cost of switching against the rewards to be gained from performing a task.
+        * If true, for levels greater than zero on the difference variable, we should observe a positive, linear slope between difference and the probability of switching.
+        * We will investigate this by running a generalized linear mixed model (where random effects are grouped by subjects to control for between-subject differences), where the difference predicts likelihood of switching tasks.
+    (b) Assessing whether the cost of effort increases over time.
+        * If true, we expect that partitipants will require more reward for the same amount of effort as the experiment progresses.
+        * We will investigate this by including block as a predictor in the model, and we expect a block X difference interaction where the slope of the difference decreases as block increases.
+        
+## Analysis 1 -- The Representation of Reward
+
+### Load libraries and data
+
+```{r}
+library(data.table)
+library(dplyr)
+library(ez)
+library(ggplot2)
+```
+
+```{r}
+current_data <- fread('../data/easy_clean_full.csv')
+str(current_data)
+summary(current_data)
+```
+
+### Plot the cell means
+
+```{r}
+subject_means <- current_data %>%
+  group_by(subject, current, other) %>%
+  summarize(transcode = mean(transcode))
+
+dodge = position_dodge(width = .9)
+
+subject_means %>%
+  group_by(current, other) %>%
+  summarize(switch = mean(transcode), se = sd(transcode) / sqrt(n())) %>%
+  ggplot(aes(x = current, y = switch, group = other)) + geom_bar(stat = 'identity', aes(fill = other, group = other), position = dodge) + 
+  geom_errorbar(aes(ymin = switch - se, ymax = switch + se, group = other), position = dodge, width = .5) + ylim(0,1)
+```
+
+If reward representation is strengthened after performing a task, thereby making one more sensitive to changes in *that* task's reward, we would have expected the middle right bar to be higher than the middle left bar -- reflecting a bias to switch tasks more in response to only decreases in current task reward relative to only increases in other task reward. But actually we see the opposite. We'll follow up on this to see if this difference is statistically significant. 
+
+### Running the ANOVA
+
+```{r}
+model1 <- ezANOVA(data = subject_means, wid = subject, within = .(current, other), dv = transcode, type = 2, detailed = TRUE)
+model1
+```
+
+All effects in the model are significant, the most notable of which being the interaction. The way in which reward transitions between trials seems to have a large impact on task selections. Let's follow up on the interaction.
+
+### Follow-up tests
+
+```{r}
+## keep the error term from the omnibus model
+ssd_omnibus <- model1$ANOVA[4,'SSd']
+dfd_omnibus <- model1$ANOVA[4,'DFd']
+
+## make a truncated dataset with only the contrast of interest
+model2 <- subject_means %>%
+  mutate(other_change = ifelse(current == 1 & other == 0, 0, ifelse(current == 0 & other == 1, 1, ''))) %>%
+  filter(other_change != '') %>%
+  ezANOVA(wid = subject, within = other_change, dv = transcode, type = 2, detailed = TRUE)
+
+
+## calculate the F contrast by swapping out the error term
+ssn_contrast <- model2$ANOVA[2, 'SSn']
+mse_contrast <- ssd_omnibus / dfd_omnibus
+F_contrast <- ssn_contrast / mse_contrast
+df1 <- 1
+p_value <- pf(F_contrast, df1, dfd_omnibus, lower.tail = FALSE)
+effect_size <- ssn_contrast / (ssn_contrast + ssd_omnibus)
+
+paste("F(",df1,", ",dfd_omnibus, ") = ", round(F_contrast, digits =2), ", p = ", round(p_value, digits = 5), ', np2 = ', round(effect_size, digits = 2), sep='')
+```
+
+It turns out that this difference is highly significant and in the opposite direction from what we expected (*F*(1,62) = 18.18, *p* < .001, partial eta = .23). We speculate on why this might have been in the opposite direction from our prediction in the discussion of our paper. But the bottom line is that our prediction was violated, suggesting that perhaps the process of weighing reward against effort is not closely associated with the the mechanisms required for task performance. Currently we make no strong claims as to what explains the trend that we *did* observe in the data. We ran a follow-up study using eye tracking to more specifically investigate the relationship between reward and attention in this paradigm, and you can get a sense of those data [here](../other_resources/Braun_OPAM_2017.pdf).
+
+## Analysis 2 -- Weighing effort against reward
+
+
+### Load libraries and data
+
+```{r}
+library(lme4)
+library(lmtest)
+library(blmeco)
+library(tidyr)
+```
+
+```{r}
+current_data <- fread('../data/easy_clean.csv')
+str(current_data)
+summary(current_data)
+```
+
+### Descriptive look at the data
+
+We can look at the means first to get a general sense of the trends in the data. We'll look at switch rate broken down by point difference and block, and we'll display individual subject data as well:
+
+```{r}
+## dichotomizing block for visualization purposes
+subject_means <- current_data %>%
+  mutate(block_d = factor(ifelse(block >= 6, 'Late', ifelse(block <= 4, 'Early','')), levels = c('Early','Late','')),
+         difference = as.factor(difference)) %>%
+  filter(block_d != '') %>%
+  group_by(subject, difference, block_d) %>%
+  summarize(transcode = mean(transcode))
+
+cell_means <- subject_means %>%
+  group_by(difference, block_d) %>%
+  summarize(switch = mean(transcode), se = sd(transcode) / sqrt(n())) %>%
+  rename(transcode = switch)
+
+cell_means
+
+ggplot(data = cell_means, aes(x = difference, y = transcode, group = 1)) + geom_line(data = subject_means, aes(x = difference, y = transcode, group = subject), alpha = .2) + 
+  geom_line(data = cell_means, aes(x = difference, y = transcode), size = 2) + 
+  geom_ribbon(data = cell_means, aes(ymin = transcode - se, ymax = transcode + se), alpha = .3) + ylim(0,1) + theme(legend.position = 'none') + facet_grid(~block_d) + 
+  ylab('Switch Rate') + xlab('Point Difference (Positive values indicate more incentive for switching)')
+```
+
+The smaller, faded lines represent individual subject data, the black line represents cell means, the shaded area around this line represents plus and minus one standard error from the mean, and 'early' and 'late' represent eariler or later portions of the experiment. We're mainly interested in the initial spike in switch rates mostly happening between 0 and 1 on the difference. It looks like this increase may be slightly less steep in later portions of the experiment, which could suggest that -- as participants grow weary throughout the experiment -- they wait longer to switch because they require more reward to offset the switch cost. Let's try to model all of this statistically.
+
+### Model fits
+The first order of business is to find the best-fitting random effects structure for these data. The model that I ultimately want to run is one where the main effects and interaction between block and difference predict the probability of switching tasks. I'll start by specifiying the maximally complex random effects structure (as per the logic from [Bolker et al., 2008](https://doi.org/10.1016/j.tree.2008.10.008)), which is all three of the fixed factors as random effects grouped by subjects. I'll adjust the random effects based on two criteria:  
+      
+  *  Failure to converge
+      * In which case I'll remove a random effect and re run the analysis
+        
+  *  Non significance of a random effect as determined by log likelihood ratio test against next-simplest model
+      * In which case I'll take the simpler model and compare it against the next simpler model, etc.
+      
+I'm using a center-coded version of the block variable so that estimates are generated from the middle of this distribution (i.e., the middle portion of the experiment).
+
+The most complex model:
+
+*(I'm setting eval to FALSE and loading a previously saved model from a local directory because these take forever to run)*
+
+```{r eval = FALSE}
+## warning: these take a long time to run
+complex0_model <- glmer(transcode ~ block_c * difference + (1 + block_c * difference | subject), data = current_data, family = binomial(link = 'logit'), nAGQ = 1) #nAGQ 1 is the default
+saveRDS(complex0_model, '../other_resources/complex0_model.rds')
+```
+```{r}
+complex0_model <- readRDS('../other_resources/complex0_model.rds')
+```
+
+
+
+There were no convergence warnings -- good sign. Now to test the next-most complex model:
+
+```{r eval = FALSE}
+complex1_model <- glmer(transcode ~ block_c * difference + (1 + block_c + difference | subject), data = current_data, family = binomial(link = 'logit'), nAGQ = 1)
+saveRDS(complex1_model, '../other_resources/complex1_model.rds')
+```
+```{r}
+complex1_model <- readRDS('../other_resources/complex1_model.rds')
+```
+
+Testing the model fits against each other using LRT:
+
+```{r}
+lrtest(complex0_model,complex1_model)
+```
+
+This test was highly significant, suggesting that the random interaction is a highly significant random effect in the model.
+
+Checking model fit is a notoriously difficult thing to do for mixed logistic models... 
+
+Bolker et al. (2008) warn about the risk of overdispersion in logistic models, which basically means that the data exhibit more variability than expected given the assumed distribution. We can check for this by using the blmeco::dispersion_glmer() function. This function returns the scale parameter of the model, and, according to the documentation, if the scale parameter is between 0.75 and 1.4, there *may not* be an overdispersion problem.
+
+```{r}
+dispersion_glmer(complex0_model)
+```
+
+The scaling parameter looks good.
+
+There is a lack of consensus as far as the assumptions for logistic regressions with random effects. If I see evidence that residuals for both fixed and random effects are normally distributed, and that residuals are homogeneously distributed around the predicted values, I'll be happy with the model fit. 
+
+
+R's ggplot doesn't have great support for qqplots, so I'm stealing a function from [here](https://stackoverflow.com/questions/4357031/qqnorm-and-qqline-in-ggplot2/) that will easily create a qqplot and a qqline in ggplot given a vector (of residuals) as input
+
+```{r}
+qqplot.data <- function (vec) # argument: vector of numbers
+{
+  # following four lines from base R's qqline()
+  y <- quantile(vec[!is.na(vec)], c(0.25, 0.75))
+  x <- qnorm(c(0.25, 0.75))
+  slope <- diff(y)/diff(x)
+  int <- y[1L] - slope * x[1L]
+
+  d <- data.frame(resids = vec)
+
+  ggplot(d, aes(sample = resids)) + stat_qq() + geom_abline(slope = slope, intercept = int)
+
+}
+```
+
+First to check the normality of residuals from the overall model.
+
+```{r}
+hist(resid(complex0_model), main = 'Residuals from Overall Model', xlab = 'Residuals')
+qqplot.data(resid(complex0_model))
+```
+
+I'm pretty happy with the distribution of the residuals overall.
+
+Now let's look at the distribution of the residuals of each random effect.
+
+```{r}
+ran_residuals <- ranef(complex0_model)$subject
+colnames(ran_residuals)[c(1,4)] <- c('intercept','interaction')
+ran_residuals <- gather(data = ran_residuals, factor, residual, intercept:interaction)
+
+ggplot(data = ran_residuals, aes(sample = residual)) + stat_qq() + facet_grid(~factor)
+
+```
+
+Normality looks violated for every random effect except the intercept. It's difficult to know what to make of these. Some have suggested that the normality of residuals is rather inconsequential for interpreting the fixed effects [Gelman & Hill, 2012](http://lac-essex.wdfiles.com/local--files/meetings1213/gelman_1.pdf). Since the residuals from the overall model are normally distributed, the scaling parameter isn't overdispersed, and the model fits the data significantly better than a model with the next-simplest random effects structure, I feel confident in the overall fit of the model.
+
+### Interpretation of the fixed effects
+
+I'll convert the fixed effects estimates to probabilities for plotting, and I'll describe them as odds ratios (as per convention). 
+
+```{r}
+intercept <- fixef(complex0_model)[1]
+block_b <- fixef(complex0_model)[2]
+difference_b <- fixef(complex0_model)[3]
+interaction_b <- fixef(complex0_model)[4]
+
+test_data <- data.frame(difference = rep(-3:3,2), block = c(rep(-2,3), rep(4,4), rep(4,3), rep(-2,4)))
+test_data$interaction <- with(test_data, difference * block)
+test_data$fit <- with(test_data, plogis(intercept + block_b * block + difference_b * difference + interaction_b * interaction))
+test_data$difference <- as.factor(test_data$difference)
+summary(complex0_model)
+exp(fixef(complex0_model))
+test_data$block_d <- as.factor(ifelse(test_data$block == -2, 'Early', 'Late'))
+
+ggplot(data = test_data, aes(x = difference, y = fit, group = block_d)) + geom_line(data = test_data, aes(x = difference, y = fit, color = block_d), size = 2) + ylim(0,1)
+
+
+```
+
+Plotting the estimates from the model reveals that the data appear to be in line with the predictions from both *Hypothesis 2a* and *Hypothesis 2b*:
+  *  The decision to switch is a positive, linear function of the amount of reward to be obtained for switching
+        *  As evidenced by the fact that each unit increase in the difference is associated with a 2.41 factor increase in the odds of switching (p < .001)
+  *  Participants required more reward for the same amount of effort as the experiment progressed.
+        *  As evidenced by the main effect of block (b = 0.94, p = .003), and the interaction between block and difference (b = .98, p = .03). 
+        
+Looking at the model's predictions overlayed on the subject data:
+
+```{r}
+ggplot(data = test_data, aes(x = difference, y = fit, group = 1)) + geom_line(data = test_data, aes(x = difference, y = fit), size = 2) +
+  geom_line(data = subject_means, aes(x = difference, y = transcode, group = subject), alpha = .2) + facet_grid(~block_d)
+```
+
+That initial spike in the subject data looks darker in the early relative to late blocks, reflecting the density of data in that region. The fact that the slope of the difference is steeper in earlier blocks seems to be a reasonable representation of the trends in the observed data.
+
+In the following graph, I'm simply reversing the factors (plotting block on the x axis). I didn't do this when initially analyzing the data, but I like how it complements the story:
+
+```{r}
+## quick addition
+
+test_data <- data.frame(difference = rep(c(rep(-3,6), rep(3, 6)), 2), block_c = c(-5:6, 6:-5))
+test_data$fit <- with(test_data, plogis(intercept + difference * difference_b + block_b * block_c + difference * block_c * interaction_b))
+test_data$block_c <- test_data$block_c + 6
+test_data$difference <- as.factor(test_data$difference)
+levels(test_data$difference) <- c('low','high')
+
+ggplot(data = test_data, aes(x = as.factor(block_c), y = fit, group = difference)) + geom_line(aes(color = difference), size = 2) + 
+  ylim(0,1) + xlab('Block') + ylab('Probability of Switching')
+```
+When difference is low (more reward for repeating), we're basically seeing a floor effect that doesn't change as a function of block. When the reward for switching is high, the probability of switching decreases as the experiment progresses. To follow up on this interaction, I'm going to test the main effect of block at high and low levels on the difference, with the expectation being that the influence of block on the probability of switching will be moderated at low, but not high, levels of the difference. 
+
+We further investigate *Hypothesis 2b* by running follow-up tests. 
+
+Because these models take such a long time to run, I've set the model code to not run and I've simply saved the models to and am loading them from a local directory.
+
+```{r}
+current_data <- current_data %>%
+  mutate(difference_lo = difference + 3,
+         difference_hi = difference - 3)
+```
+
+```{r eval = FALSE}
+start_time <- Sys.time()
+block_hidiff <- glmer(transcode ~ block_c * difference_hi + (1 + block_c * difference_hi | subject), data = current_data, family = binomial(link = 'logit'), nAGQ = 1)
+stop_time <- Sys.time()
+hidiff_runtime <- stop_time - start_time
+saveRDS(block_hidiff, '../other_resources/block_hidiff.rds')
+
+```
+
+```{r}
+block_hidiff <- readRDS('../other_resources/block_hidiff.rds')
+summary(block_hidiff)
+```
+
+
+In all of these follow up analyses, we're interested in the main effect of block. Here, we see that the effect is highly significant, suggesting that, at high difference levels, block is significantly, negatively associated with the odds of switching. It is also worth noting that the model didn't converge. I'm a little unsure about the priorities here: Is it better to keep the random effects structure constant or is it better to run a model that will return stable estimates? We can rerun with the next simplest model:
+
+
+```{r eval = FALSE}
+start_time <- Sys.time()
+block_hidiff_stepdown <- glmer(transcode ~ block_c * difference_hi + (1 + block_c | subject), data = current_data, family = binomial(link = 'logit'), nAGQ = 1)
+stop_time <- Sys.time()
+hidiff_runtime_stepdown <- stop_time - start_time
+saveRDS(block_hidiff_stepdown, '../other_resources/block_hidiff_stepdown.rds')
+```
+
+```{r}
+block_hidiff_stepdown <- readRDS('../other_resources/block_hidiff_stepdown.rds')
+summary(block_hidiff_stepdown)
+```
+
+I had to remove two random effects to get this to converge, but we see that the significance of block is unchanged. The effect is robust to these changes in model design. 
+
+Now to test low difference. We expect that the influence of block would be moderated at low levels of the difference. Checking the model with the full random effects structure specified:
+
+
+```{r eval = FALSE}
+start_time <- Sys.time()
+block_lodiff <- glmer(transcode ~ block_c * difference_lo + (1 + block_c * difference_lo | subject), data = current_data, family = binomial(link = 'logit'), nAGQ = 1)
+stop_time <- Sys.time()
+lodiff_runtime <- stop_time - start_time
+saveRDS(block_lodiff, '../other_resources/block_lodiff')
+
+```
+
+```{r}
+block_lodiff <- readRDS('../other_resources/block_lodiff.rds')
+summary(block_lodiff)
+```
+
+Here the main effect of block doesn't look significant at all. But again, the model failed to converge. Running a step-down model:
+
+
+```{r eval = FALSE}
+start_time <- Sys.time()
+block_lodiff_stepdown <- glmer(transcode ~ block_c * difference_lo + (1 + block_c + difference_lo | subject), data = current_data, family = binomial(link = 'logit'), nAGQ = 1)
+stop_time <- Sys.time()
+lodiff_runtime_stepdown <- stop_time - start_time
+saveRDS(block_lodiff_stepdown, '../other_resources/block_lodiff_stepdown')
+```
+
+```{r}
+block_lodiff_stepdown <- readRDS('../other_resources/block_lodiff_stepdown.rds')
+summary(block_lodiff_stepdown)
+```
+
+
+This looks quite different. Even though we understand the general trend of the interaction, it's probably best to hesitate before claiming that the influence of block is fully moderated at low levels of the difference. 
+
+So in sum, the hypotheses 2a and 2b were generally supported: participants weighed reward against effort in ways that are reasonable from an expected-value perspective, and the cost of effort appears to increase over time.
+
+One caveat, of course, is that we can't distinguish the block X difference interaction from a practice-effect explanation. It's possible that participants are simply developing a strategy of responding over time, rather than just getting tired. Future work from our laboratory will address this question more directly.
+
+
+
+
+
+
+
+
+
+
