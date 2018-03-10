@@ -25,3 +25,17 @@ If you have any questions, don't hesitate to email -> dab414@lehigh.edu
 
 Best,  
 Dave Braun
+
+### List of Dependencies
+
+*  data.table
+*  reshape2
+*  ggplot2
+*  plyr
+*  dplyr
+*  GGally
+*  tidyr
+*  ez
+*  lme4
+*  lmtest
+*  blmeco
