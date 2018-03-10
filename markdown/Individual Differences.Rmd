@@ -114,7 +114,7 @@ The graph didn't display well when running the code in the notebook, but here's 
 I apologize for the small labels -- the ggpairs function is wonderful but sometimes modifying the options can be a headache. From left to right, the labels read:
 Switch Rate, Switch Cost, Response Time, Block Time, Reward Sensitivity
 
-If you cross reference with what I reported in the paper, you'll see I didn't reproduce the numbers perfectly. But overall I'm pretty happy with the fact that the strength, direction and significance of the relationships are largely the same. There are a few exceptions (like the relationship between RT and Block Time to Switch Cost), but it might be a massive time investment to figure out what exactly is going on. Either way, the strengths of the relationships are weak.
+If you cross reference with what I reported in the paper, you'll see I didn't reproduce the numbers perfectly. But overall I'm pretty happy with the fact that the strength, direction and significance of the relationships are largely the same. There are a few exceptions (like the relationship between RT and Block Time to Switch Cost), but either way the strengths of the relationships are weak.
 
 In the text, we largely left the interpretation of this figure up to the reader, and I'm inclined to do the same here. Maybe just a few comments:  
 

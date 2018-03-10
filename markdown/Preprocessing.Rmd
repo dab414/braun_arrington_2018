@@ -2,7 +2,7 @@
 title: "Preprocessing of the Raw Data"
 output: html_notebook
 ---
-This document goes over the basic data coding and trimming procedures used in Braun & Arrington (2018). 
+This document goes over the basic data coding and trimming procedures used in Braun & Arrington (2018). See [here](../data/var_code.txt) for a text file listing the variables of interest and what they mean.
 
 ### Loading libraries, data, and keeping only the important variables.
 
@@ -116,16 +116,21 @@ error_rows <- original_trials - nrow(current_data)
 hist(current_data$difference, main = 'Difference', xlab = 'Difference (Positive means more points for switching)')
 ```
 
-It's clear from the histogram above that, for most trials, the difference was close to zero, meaning that subjects reponded in a way to keep the tasks rather similar in reward. Since we're interested in the moment where reward offsets the cost of switching, we're only interested in explaining the middle of this distribution. The extreme portions of this distribution likely either reflect disengagement from task or a specific strategy that we're not interested in explaining for present purposes (i.e., repeat until maximum reward is available, then switch). We're going to constrain the data to -3 through 3 on this difference variable to give us the best chance of explaining the process of weighing reward against effort. I'm saving out a dataset where we don't trim based on this criterion for analyses that don't depend on this difference variable. 
+It's clear from the histogram above that, for most trials, the difference was close to zero, meaning that subjects reponded in a way to keep the tasks rather similar in reward. Since we're interested in the moment where reward offsets the cost of switching, we're only interested in explaining the middle of this distribution. The extreme portions of this distribution likely either reflect disengagement from task or a specific strategy that we're not interested in explaining for present purposes (i.e., repeat until maximum reward is available, then switch). We're going to constrain the data to -3 through 3 on this difference variable to give us the best chance of explaining the process of weighing reward against effort. I'm saving two datasets: one that trims the difference variable to use for analyses that depend on this variable, and one that doesn't trim for analyses that don't depend on this variable.  
 
 ```{r}
+## keep only variables we care about
 current_data <- subset(current_data, select = -c(colorl, colorr, procedure, responselocation, stim, taskcode, taskattempt, transition, pvl, pvr, error, error_trim, pvc, pvo, errors))
+## convert variables to their correct data type
 current_data$current <- as.factor(current_data$current)
 current_data$other <- as.factor(current_data$other)
 current_data$transcode <- as.numeric(current_data$transcode)
 current_data$subject <- as.factor(current_data$subject)
+
+## write the dataset that DOESN'T trim the difference
 write.csv(current_data, '../data/easy_clean_full.csv', row.names = FALSE)
 
+## trim the difference
 current_data <- current_data %>%
   filter(difference >= -3 & difference <= 3)
 
@@ -137,6 +142,7 @@ paste('In sum, ', round(error_rows / original_trials, 2), '% of the data was dro
 Saving a cleaned dataset to a local directory.
 
 ```{r}
+## write the dataset that does trim on this variable
 write.csv(current_data, '../data/easy_clean.csv', row.names = FALSE)
 ```
 

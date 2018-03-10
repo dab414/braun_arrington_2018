@@ -16,7 +16,7 @@ The important files in this repository:
     *  This document covers the initial data manipulation and trimming procedures.
 
 4. [Individual Differences Analysis](http://htmlpreview.github.io/?https://github.com/dab414/braun_arrington_2018/blob/master/markdown/Individual%20Differences.nb.html)
-    *  This document covers some (mostly auxillary) descripitve looks at the data with an emphasis on between-subject differences.
+    *  This document covers some (mostly auxillary) descriptive looks at the data with an emphasis on between-subject differences.
 
 5. [Task Selection Analyses](http://htmlpreview.github.io/?https://github.com/dab414/braun_arrington_2018/blob/master/markdown/main_analyses.nb.html)
     *  This document covers the analyses that were central to the paper.

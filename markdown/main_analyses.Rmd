@@ -27,7 +27,7 @@ There are two analyses that will be presented:
         * If true, for levels greater than zero on the difference variable, we should observe a positive, linear slope between difference and the probability of switching.
         * We will investigate this by running a generalized linear mixed model (where random effects are grouped by subjects to control for between-subject differences), where the difference predicts likelihood of switching tasks.
     (b) Assessing whether the cost of effort increases over time.
-        * If true, we expect that partitipants will require more reward for the same amount of effort as the experiment progresses.
+        * If true, we expect that participants will require more reward for the same amount of effort as the experiment progresses.
         * We will investigate this by including block as a predictor in the model, and we expect a block X difference interaction where the slope of the difference decreases as block increases.
         
 ## Analysis 1 -- The Representation of Reward
@@ -44,7 +44,6 @@ library(ggplot2)
 ```{r}
 current_data <- fread('../data/easy_clean_full.csv')
 str(current_data)
-summary(current_data)
 ```
 
 ### Plot the cell means
@@ -116,7 +115,6 @@ library(tidyr)
 ```{r}
 current_data <- fread('../data/easy_clean.csv')
 str(current_data)
-summary(current_data)
 ```
 
 ### Descriptive look at the data
@@ -191,8 +189,6 @@ lrtest(complex0_model,complex1_model)
 
 This test was highly significant, suggesting that the random interaction is a highly significant random effect in the model.
 
-Checking model fit is a notoriously difficult thing to do for mixed logistic models... 
-
 Bolker et al. (2008) warn about the risk of overdispersion in logistic models, which basically means that the data exhibit more variability than expected given the assumed distribution. We can check for this by using the blmeco::dispersion_glmer() function. This function returns the scale parameter of the model, and, according to the documentation, if the scale parameter is between 0.75 and 1.4, there *may not* be an overdispersion problem.
 
 ```{r}
@@ -201,7 +197,7 @@ dispersion_glmer(complex0_model)
 
 The scaling parameter looks good.
 
-There is a lack of consensus as far as the assumptions for logistic regressions with random effects. If I see evidence that residuals for both fixed and random effects are normally distributed, and that residuals are homogeneously distributed around the predicted values, I'll be happy with the model fit. 
+There is a lack of consensus as far as the assumptions for logistic regressions with random effects. If I see evidence that residuals for both fixed and random effects are normally distributed, I'll be happy with the model fit. 
 
 
 R's ggplot doesn't have great support for qqplots, so I'm stealing a function from [here](https://stackoverflow.com/questions/4357031/qqnorm-and-qqline-in-ggplot2/) that will easily create a qqplot and a qqline in ggplot given a vector (of residuals) as input
@@ -267,11 +263,13 @@ ggplot(data = test_data, aes(x = difference, y = fit, group = block_d)) + geom_l
 
 ```
 
-Plotting the estimates from the model reveals that the data appear to be in line with the predictions from both *Hypothesis 2a* and *Hypothesis 2b*:
-  *  The decision to switch is a positive, linear function of the amount of reward to be obtained for switching
-        *  As evidenced by the fact that each unit increase in the difference is associated with a 2.41 factor increase in the odds of switching (p < .001)
-  *  Participants required more reward for the same amount of effort as the experiment progressed.
-        *  As evidenced by the main effect of block (b = 0.94, p = .003), and the interaction between block and difference (b = .98, p = .03). 
+Plotting the estimates from the model reveals that the data appear to be in line with the predictions from both *Hypothesis 2a* and *Hypothesis 2b*:  
+
+*  The decision to switch is a positive, linear function of the amount of reward to be obtained for switching  
+    *  As evidenced by the fact that each unit increase in the difference is associated with a 2.41 factor increase in the odds of switching (p < .001)
+    
+*  Participants required more reward for the same amount of effort as the experiment progressed.
+    *  As evidenced by the main effect of block (b = 0.94, p = .003), and the interaction between block and difference (b = .98, p = .03). 
         
 Looking at the model's predictions overlayed on the subject data:
 
@@ -358,7 +356,7 @@ block_lodiff <- readRDS('../other_resources/block_lodiff.rds')
 summary(block_lodiff)
 ```
 
-Here the main effect of block doesn't look significant at all. But again, the model failed to converge. Running a step-down model:
+Here the main effect of block is not significant. But again, the model failed to converge. Running a step-down model:
 
 
 ```{r eval = FALSE}
@@ -371,7 +369,7 @@ saveRDS(block_lodiff_stepdown, '../other_resources/block_lodiff_stepdown')
 
 ```{r}
 block_lodiff_stepdown <- readRDS('../other_resources/block_lodiff_stepdown.rds')
-summary(block_lodiff_stepdown)
+summary(block_lodiff_stepdown) 
 ```
 
 
